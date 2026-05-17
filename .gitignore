@@ -1,28 +1,20 @@
-# AI_OS workspace — only the `presence` project (site/ + worker/) lives in
-# this repo. Everything else in the workspace is excluded.
+# Repo policy: only the `presence` project lives here. Everything else in the
+# AI_OS workspace is excluded by default — any NEW root-level file or folder
+# will not be tracked unless it's explicitly listed below.
 
-# Other unrelated projects in the workspace
-PROJECT.md
-libre_chat/
-ma-css-framework.html
-ma-design-guidelines.md
-scripts/
-streams-on-goose/
+# Block every root-level file/folder by default…
+/*
 
-# Editor / OS
-.DS_Store
-.claude/
-.idea/
-.vscode/
+# …then opt in only the four things that belong in this repo:
+!/.gitignore
+!/README.md
+!/site/
+!/worker/
 
-# Wrangler local cache (contains Cloudflare account cache / state)
+# Inside the included dirs, exclude transient state / caches / secrets.
 .wrangler/
-worker/.wrangler/
-
-# Dev secrets (we don't have any today, but leave the pattern in place)
 .dev.vars
 .env
 .env.*
-
-# Node
 node_modules/
+.DS_Store
