@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>presence</title>
+<style>
+  :root {
+    --bg: #F0EEE6;
+    --ink: #1F1E1D;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Georgia, "Times New Roman", "Liberation Serif", serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #stage {
+    display: none;
+    font-size: clamp(2.8rem, 6vw, 4rem);
+    max-width: 80vw;
+    text-align: center;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+  }
+  #text { white-space: pre-wrap; }
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: var(--ink);
+    margin-left: 4px;
+    vertical-align: -0.12em;
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  #timer, #finalWord {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 1.6s ease;
+    pointer-events: none;
+  }
+  #timer {
+    font-size: clamp(2.8rem, 6vw, 4rem);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+  #finalWord {
+    font-size: clamp(2.8rem, 6vw, 4rem);
+    letter-spacing: 0.04em;
+  }
+
+  /* Cross-fade cycle: clock and presence trade places every 9s,
+     with a true blank moment between each swap. 18s total. */
+  #timer.cycling     { animation: cycleClock    18s ease-in-out infinite; opacity: 0; }
+  #finalWord.cycling { animation: cyclePresence 18s ease-in-out infinite; opacity: 0; }
+  @keyframes cycleClock {
+    0%   { opacity: 0; }   /* blank */
+    8%   { opacity: 1; }   /* fade-in done (1.5s) */
+    39%  { opacity: 1; }   /* hold full until 7s */
+    47%  { opacity: 0; }   /* fade-out done (8.5s) */
+    100% { opacity: 0; }   /* stay blank while presence shows */
+  }
+  @keyframes cyclePresence {
+    0%   { opacity: 0; }
+    50%  { opacity: 0; }   /* blank while clock had its turn */
+    58%  { opacity: 1; }   /* fade-in done (10.5s) */
+    89%  { opacity: 1; }   /* hold full until 16s */
+    97%  { opacity: 0; }   /* fade-out done (17.5s) */
+    100% { opacity: 0; }   /* blank at wrap, clock starts fresh */
+  }
+
+  #start {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 0.8rem 2rem;
+    background: transparent;
+    border: 1px solid var(--ink);
+    color: var(--ink);
+    font: inherit;
+    font-size: clamp(2rem, 4.5vw, 2.6rem);
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+    cursor: pointer;
+    transition: opacity 0.6s ease;
+  }
+  #start:hover { background: rgba(31, 30, 29, 0.06); }
+
+  /* The hidden YouTube player MUST be inside the viewport with non-zero
+     dimensions and >0 opacity, or mobile Safari / Android Chrome silently
+     refuse audio playback (and offscreen iframes are treated as suspended). */
+  #player {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    width: 2px;
+    height: 2px;
+    opacity: 0.001;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .fade-out { opacity: 0 !important; transition: opacity 0.9s ease; }
+  .visible  { opacity: 1 !important; }
+
+  .underline-word {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+
+  /* Closing prompts (gift, phone, gdp) */
+  .overlay-prompt {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.4rem;
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+  .overlay-prompt.visible { opacity: 1; }
+  .prompt-line {
+    font-size: 1rem;
+    letter-spacing: 0.06em;
+  }
+  .return-btn {
+    background: transparent;
+    border: 1px solid var(--ink);
+    color: var(--ink);
+    padding: 0.7rem 1.6rem;
+    font: inherit;
+    font-size: clamp(2rem, 4.5vw, 2.6rem);
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 4px;
+    min-width: 3rem;
+  }
+  .return-btn:hover { background: rgba(31, 30, 29, 0.06); }
+  .share-stats {
+    font-size: clamp(1rem, 2.4vw, 1.3rem);
+    opacity: 0.55;
+    letter-spacing: 0.04em;
+    min-height: 1em;
+  }
+  .skip-link {
+    background: transparent;
+    border: none;
+    color: var(--ink);
+    opacity: 0.45;
+    font: inherit;
+    font-size: clamp(1rem, 2.4vw, 1.3rem);
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    padding: 0.3rem 0.5rem;
+    margin-top: 0.8rem;
+  }
+  .skip-link:hover { opacity: 0.8; }
+
+  /* GDP closeout */
+  .gdp-main {}  /* inline so cursor sits at end of headline while typing */
+  .gdp-foot {
+    display: none;             /* hidden until footnote actually starts typing */
+    font-size: 0.55em;
+    opacity: 0.6;
+    margin-top: 1.4em;
+    letter-spacing: 0.05em;
+  }
+  .gdp-foot.shown { display: block; }
+</style>
+</head>
+<body>
+
+  <button id="start">click</button>
+
+  <div id="stage">
+    <span id="text"></span><span class="cursor" id="cursor"></span>
+  </div>
+
+  <div id="timer">10:00</div>
+  <div id="finalWord">presence</div>
+
+  <div id="shareBox" class="overlay-prompt">
+    <button id="shareBtn" class="return-btn" aria-label="share present">share present</button>
+    <div id="shareStats" class="share-stats"></div>
+    <button id="shareSkip" class="skip-link" aria-label="continue">continue</button>
+  </div>
+
+  <div id="player"></div>
+
+<script>
+  // ====== CONFIG ======
+  // Paste the YouTube video ID for "Fisher" by Camel Power Club here.
+  // Example: if the URL is https://www.youtube.com/watch?v=ABC123XYZ, the ID is "ABC123XYZ".
+  const YT_VIDEO_ID = "Gbs8ogjBoRY";
+  const START_SECONDS = 26;
+
+  const TYPE_SPEED   = 85;
+  const DELETE_SPEED = 40;
+  const SLOW_TYPE_SPEED   = 150;   // for "self"
+  const SLOW_DELETE_SPEED = 110;   // for "time" / "self" removal
+  const PRESENCE_TYPE_SPEED = 280; // even slower for "presence"
+  const HOLD_AFTER_TYPE = 950;
+  const PAUSE_BETWEEN = 450;
+
+  // Append ?fast to the URL to shrink the 10-min timer to 10s (everything else
+  // runs at production pace so the surrounding flow looks the same in test mode).
+  const FAST = new URLSearchParams(location.search).has("fast");
+  const TIMER_SECONDS = FAST ? 10 : 10 * 60;
+
+  // Our own audit log (Cloudflare Worker + D1). Set to "" to disable.
+  // Deploy steps in worker/README.md.
+  const LOG_ENDPOINT = "https://presence-log.g-d-presence.workers.dev";
+  // =====================
+
+  const textEl     = document.getElementById("text");
+  const cursorEl   = document.getElementById("cursor");
+  const stage      = document.getElementById("stage");
+  const timerEl    = document.getElementById("timer");
+  const finalEl    = document.getElementById("finalWord");
+  const startBtn   = document.getElementById("start");
+
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function type(str, target, speed) {
+    target = target || textEl;
+    speed = speed || TYPE_SPEED;
+    for (const ch of str) {
+      target.textContent += ch;
+      await wait(speed + (Math.random() * 40 - 20));
+    }
+  }
+
+  // ---- Date helper ----
+  const todayKey = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+
+  // ---- localStorage helpers ----
+  const LS = {
+    get(k, fb) { try { const v = localStorage.getItem(k); return v == null ? fb : v; } catch (_) { return fb; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  };
+  function getOrCreateUserId() {
+    let id = LS.get("presence:userId");
+    if (!id) {
+      id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+         : "u-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      LS.set("presence:userId", id);
+    }
+    return id;
+  }
+  function isReturning() { return LS.get("presence:lastCompletedDate") != null; }
+  function isDoneToday() { return LS.get("presence:lastCompletedDate") === todayKey(); }
+  function markCompletedToday() {
+    LS.set("presence:lastCompletedDate", todayKey());
+    const n = parseInt(LS.get("presence:lifetimeCompletions", "0"), 10) || 0;
+    LS.set("presence:lifetimeCompletions", String(n + 1));
+  }
+  function getSharesToday() {
+    if (LS.get("presence:sharesDate") !== todayKey()) return 0;
+    return parseInt(LS.get("presence:sharesToday", "0"), 10) || 0;
+  }
+  function bumpSharesToday() {
+    const today = todayKey();
+    const current = (LS.get("presence:sharesDate") === today)
+      ? (parseInt(LS.get("presence:sharesToday", "0"), 10) || 0) : 0;
+    LS.set("presence:sharesDate", today);
+    LS.set("presence:sharesToday", String(current + 1));
+    return current + 1;
+  }
+  function parseRefFromUrl() {
+    const ref = new URLSearchParams(location.search).get("ref");
+    if (ref && /^[A-Za-z0-9_-]{6,64}$/.test(ref)) {
+      LS.set("presence:cameFromRef", ref);
+      return ref;
+    }
+    return null;
+  }
+
+  // ---- Abacus counters ----
+  async function abacusFetch(path) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 5000);
+      const r = await fetch(`https://abacus.jasoncameron.dev${path}`, { signal: ctl.signal });
+      clearTimeout(t);
+      if (!r.ok) return null;
+      const data = await r.json();
+      return typeof data.value === "number" ? data.value : null;
+    } catch (_) { return null; }
+  }
+  // Global daily counter — resets each UTC day.
+  function bumpCount() { return abacusFetch(`/hit/presence-anthropic-${todayKey()}/cycles`); }
+
+  // Fire-and-forget audit beacon to our own Worker. Safe to call when LOG_ENDPOINT is "".
+  function logEvent(type) {
+    if (!LOG_ENDPOINT) return;
+    try {
+      fetch(`${LOG_ENDPOINT}/log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          anonId: LS.get("presence:userId"),
+          cameFromRef: LS.get("presence:cameFromRef") || undefined,
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  // Per-sharer attribution: completions credited to a given referrer uuid.
+  function bumpRefCount(uuid) { return abacusFetch(`/hit/presence-ref-${uuid}/completions`); }
+  function getRefCount(uuid)  { return abacusFetch(`/get/presence-ref-${uuid}/completions`); }
+
+  // ---- Share action ----
+  async function shareNow() {
+    const userId = getOrCreateUserId();
+    const url = `${location.origin}${location.pathname}?ref=${userId}`;
+    const shareBtn = document.getElementById("shareBtn");
+    const originalLabel = shareBtn.textContent;
+    try {
+      if (navigator.share) {
+        await navigator.share({ url, text: "presence" });
+        bumpSharesToday();
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(url);
+        bumpSharesToday();
+        shareBtn.textContent = "link copied";
+        setTimeout(() => { shareBtn.textContent = originalLabel; }, 1600);
+      } else {
+        // Last-resort fallback
+        window.prompt("Copy this link", url);
+        bumpSharesToday();
+      }
+      return true;
+    } catch (_) {
+      // User cancelled or share failed — no bump.
+      return false;
+    }
+  }
+
+  // Wait for either share button click (resolves true) or skip click (resolves false).
+  function waitForShareAction(shareBtnEl, skipEl) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => {
+        if (done) return;
+        done = true;
+        shareBtnEl.removeEventListener("click", onShare);
+        skipEl.removeEventListener("click", onSkip);
+        resolve(v);
+      };
+      const onShare = async () => { await shareNow(); finish(true); };
+      const onSkip = () => finish(false);
+      shareBtnEl.addEventListener("click", onShare);
+      skipEl.addEventListener("click", onSkip);
+    });
+  }
+
+  async function del(n = null, speed) {
+    speed = speed || DELETE_SPEED;
+    const count = n === null ? textEl.textContent.length : n;
+    for (let i = 0; i < count; i++) {
+      textEl.textContent = textEl.textContent.slice(0, -1);
+      await wait(speed);
+    }
+  }
+
+  // ---- YouTube hidden player (preloaded muted so click can fire it instantly) ----
+  let ytPlayer = null;
+  const ytReady = new Promise((resolve) => {
+    if (!YT_VIDEO_ID || YT_VIDEO_ID === "REPLACE_WITH_VIDEO_ID") {
+      console.warn("No YT_VIDEO_ID set — running silently.");
+      return resolve();
+    }
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+    window.onYouTubeIframeAPIReady = () => {
+      ytPlayer = new YT.Player("player", {
+        height: "1",
+        width: "1",
+        videoId: YT_VIDEO_ID,
+        playerVars: {
+          autoplay: 0,
+          start: START_SECONDS,
+          controls: 0,
+          modestbranding: 1,
+          playsinline: 1,
+          loop: 1,                  // loop single video
+          playlist: YT_VIDEO_ID,    // required by YouTube to loop a single video
+        },
+        events: {
+          onReady: (e) => {
+            try {
+              e.target.mute();
+              e.target.seekTo(START_SECONDS, true);
+            } catch (_) {}
+            resolve();
+          },
+          onError: () => resolve(),
+        },
+      });
+    };
+  });
+
+  function startMusic() {
+    if (!ytPlayer) return;
+    try {
+      ytPlayer.seekTo(START_SECONDS, true);
+      ytPlayer.unMute();
+      ytPlayer.setVolume(80);
+      ytPlayer.playVideo();
+    } catch (_) {}
+  }
+
+  function setVolume(v) {
+    if (!ytPlayer) return;
+    try { ytPlayer.setVolume(Math.max(0, Math.min(100, v))); } catch (_) {}
+  }
+
+  async function fadeVolume(from, to, duration) {
+    const steps = 24;
+    const stepTime = duration / steps;
+    for (let i = 1; i <= steps; i++) {
+      setVolume(from + (to - from) * (i / steps));
+      await wait(stepTime);
+    }
+  }
+
+  function stopMusic() {
+    if (!ytPlayer) return;
+    // pauseVideo() is the only reliable way to silence audio on iOS Safari
+    // (setVolume(0) is ignored on iOS, and mute() doesn't always stick during
+    // hidden-iframe playback). Trade-off: iOS may not allow playVideo() to
+    // resume after a long pause without a fresh user gesture — best-effort
+    // resume in resumeMusic().
+    try { ytPlayer.pauseVideo(); } catch (_) {}
+  }
+
+  function resumeMusic() {
+    if (!ytPlayer) return;
+    try {
+      // Best-effort restart. On iOS Safari the long pause may have suspended
+      // the audio session; in that case the music simply stays silent.
+      ytPlayer.unMute();
+      ytPlayer.setVolume(0);
+      ytPlayer.playVideo();
+      fadeVolume(0, 70, 2800);
+    } catch (_) {}
+  }
+
+  // ---- Main sequence dispatcher ----
+  async function runSequence() {
+    parseRefFromUrl();           // capture ?ref=... if present
+    getOrCreateUserId();          // mint our own id if needed
+
+    if (isDoneToday())      await runDoneToday();
+    else if (isReturning()) await runReturning();
+    else                    await runFirstTime();
+  }
+
+  // First-ever visit (or localStorage cleared) — full preamble → timer → closing.
+  async function runFirstTime() {
+    // 1 hello.
+    await type("hello.");
+    await wait(HOLD_AFTER_TYPE);
+    await del();
+    await wait(PAUSE_BETWEEN);
+
+    // 2 someone who cares sent you a present.
+    await type("someone who cares sent you a present.");
+    await wait(HOLD_AFTER_TYPE + 400);
+    await del();
+    await wait(PAUSE_BETWEEN);
+
+    // 3 mission + "human screen time."
+    await type("we’re on a mission to reduce\n");
+    const screenTimeWords = ["human", "screen", "time."];
+    for (let i = 0; i < screenTimeWords.length; i++) {
+      const chunk = (i === 0 ? "" : " ") + screenTimeWords[i];
+      await type(chunk);
+      if (i < screenTimeWords.length - 1) await wait(450);
+    }
+    await wait(HOLD_AFTER_TYPE + 400);
+    await del();
+    await wait(PAUSE_BETWEEN);
+
+    // 4 quiet the noise — music cuts the moment the final "e" of "noise"
+    // is typed. iOS Safari doesn't honor volume changes from the YT iframe
+    // API, so a smooth fade is unreliable; we cut outright and let the
+    // remaining phrases play silent.
+    await type("to quiet the noise");
+    stopMusic();
+    await wait(HOLD_AFTER_TYPE);
+    await del();
+    await wait(PAUSE_BETWEEN);
+
+    // 5 time → space → self swap (no music from here on)
+    await type("so you can have ");
+    await type("time");
+    await wait(HOLD_AFTER_TYPE);
+    await del(4, SLOW_DELETE_SPEED);
+    await type("space", textEl, SLOW_TYPE_SPEED);
+    await wait(HOLD_AFTER_TYPE);
+    await del(5, SLOW_DELETE_SPEED);
+    await type("self", textEl, SLOW_TYPE_SPEED);
+    await wait(HOLD_AFTER_TYPE);
+    await del(4, SLOW_DELETE_SPEED);
+
+    // 5b → 7 timer starts hidden, cursor blinks, fade out "have ", type "presence"
+    const timerPromise = runTimer(TIMER_SECONDS);
+    await runPresenceTransition({ fromText: true });
+
+    // 8 cycle + closing
+    await runTimerCyclePhase(timerPromise);
+    await runClosing({ bumpThisRun: true });
+  }
+
+  // Returning user (has completed before, not today) — short intro then full timer + closing.
+  async function runReturning() {
+    // Defensive: make sure the cycling-overlay elements are fully hidden so
+    // their "presence" text can't bleed through behind the typed intro.
+    timerEl.style.display = "none";
+    finalEl.style.display = "none";
+
+    cursorEl.style.display = "";
+    await type("welcome back to ");
+    await wait(300);
+    // Slowly type "presence", then fade out
+    await type("presence", textEl, PRESENCE_TYPE_SPEED);
+    await wait(900);
+    cursorEl.style.display = "none";
+
+    // Fade out the intro, then start the timer phase
+    stage.classList.add("fade-out");
+    await wait(1000);
+    // Aggressive cleanup: wipe content while still invisible so iOS Safari
+    // can't render a residual snapshot underneath the cycle.
+    textEl.innerHTML = "";
+    textEl.textContent = "";
+    stage.style.display = "none";
+    stage.classList.remove("fade-out");
+    // Re-enable the overlay elements before the cycle starts.
+    timerEl.style.display = "";
+    finalEl.style.display = "";
+
+    // Fade music down for the meditation
+    fadeVolume(80, 0, 2000);
+
+    const timerPromise = runTimer(TIMER_SECONDS);
+    timerEl.classList.add("cycling");
+    finalEl.classList.add("cycling");
+    await timerPromise;
+
+    await runClosing({ bumpThisRun: true });
+  }
+
+  // Already completed today — short intro then GDP-only closing, no timer, no bump.
+  async function runDoneToday() {
+    // Defensive: keep the cycling-overlay elements out of the layout for the
+    // entire done-today flow (the cycle never runs here, so they should never
+    // become visible — but iOS has surprised us before).
+    timerEl.style.display = "none";
+    finalEl.style.display = "none";
+
+    cursorEl.style.display = "";
+    await type("welcome back to ");
+    await wait(300);
+    await type("presence", textEl, PRESENCE_TYPE_SPEED);
+    await wait(1200);
+    // Keep the text on screen; runClosing will cross-fade it into the share box.
+    await runClosing({ bumpThisRun: false });
+  }
+
+  // Shared transition: fade out current text, snap stage back, slow-type "presence".
+  // Uses the .fade-out CSS class (class-based fades survive iOS Safari's
+  // style-mutation batching; inline style toggling does not).
+  async function runPresenceTransition({ fromText }) {
+    if (fromText) await wait(1700);  // cursor blink on existing text
+    stopMusic();
+
+    // Fade "so you can have " out using the reliable .fade-out class.
+    stage.classList.add("fade-out");
+    await wait(1000);   // .fade-out is 0.9s, +100ms safety on iOS
+
+    // Aggressive cleanup so the old text can't linger on iOS compositors:
+    // wipe innerHTML AND textContent, then force a reflow before snapping
+    // the stage back to visible.
+    textEl.innerHTML = "";
+    textEl.textContent = "";
+    stage.classList.remove("fade-out");
+    void stage.offsetWidth;
+
+    await wait(700);
+    await type("presence", textEl, PRESENCE_TYPE_SPEED);
+    await wait(700);
+    cursorEl.style.display = "none";
+  }
+
+  // Fade "presence" out, start the cycling clock/presence animation, wait for timer.
+  async function runTimerCyclePhase(timerPromise) {
+    stage.classList.add("fade-out");
+    await wait(1000);  // .fade-out is 0.9s + 100ms safety
+
+    // While the stage is at opacity 0 via .fade-out, scrub its contents so
+    // iOS Safari can't render a residual snapshot underneath the cycle.
+    textEl.innerHTML = "";
+    textEl.textContent = "";
+    stage.style.display = "none";
+    stage.classList.remove("fade-out");
+
+    timerEl.classList.add("cycling");
+    finalEl.classList.add("cycling");
+    await timerPromise;
+  }
+
+  // Unified closing: clean up cycle, fade music back in, run thank-you/together/share/GDP.
+  async function runClosing({ bumpThisRun }) {
+    const cycleCountPromise = bumpThisRun ? bumpCount() : null;
+    if (bumpThisRun) {
+      markCompletedToday();
+      logEvent("completion");        // fire-and-forget to our own audit log
+    }
+
+    if (bumpThisRun) {
+      // End the cycle, bring stage back, run music fade-in + thank-you/together preamble.
+      timerEl.classList.remove("cycling");
+      finalEl.classList.remove("cycling");
+      timerEl.style.display = "none";
+      finalEl.style.display = "none";
+
+      textEl.innerHTML = "";
+      textEl.textContent = "";
+      cursorEl.style.display = "";
+      stage.classList.remove("fade-out");
+      stage.style.transition = "";
+      stage.style.opacity = "1";
+      stage.style.display = "block";
+
+      // Music fades back in. The track has been playing silently in the
+      // background through the timer — resumeMusic just ramps the volume.
+      resumeMusic();
+      await wait(1200);
+
+      await type("thank you.");
+      await wait(2400);
+      await del();
+      await wait(PAUSE_BETWEEN);
+
+      textEl.innerHTML =
+        '<span class="underline-word"></span><span class="rest"></span>';
+      const togetherSpan = textEl.querySelector(".underline-word");
+      const restSpan     = textEl.querySelector(".rest");
+
+      await type("together", togetherSpan);
+      const cycleCount = await cycleCountPromise;
+      const minutes = (typeof cycleCount === "number" && cycleCount > 0)
+        ? cycleCount * 10 : null;
+      const tail = minutes != null
+        ? ` we’ve created ${minutes.toLocaleString()} minutes of human presence today.`
+        : ` we’ve created many minutes of human presence today.`;
+      await type(tail, restSpan);
+      await wait(2200);
+    }
+    // For !bumpThisRun (done-today), the stage still shows "welcome back to presence"
+    // at full opacity. We cross-fade it into the share box below — no clear/delete first.
+
+    // ===== Sequential fade: stage out → (empty) → share box in =====
+    const shareBox = document.getElementById("shareBox");
+    const shareBtn = document.getElementById("shareBtn");
+    const shareSkip = document.getElementById("shareSkip");
+    const shareStats = document.getElementById("shareStats");
+
+    // Hide cursor first so the fade doesn't leave a lone blinking caret.
+    cursorEl.style.display = "none";
+
+    // Fade stage (current text) out fully before introducing the share box.
+    stage.classList.add("fade-out");
+    await wait(1300);
+    // Aggressive cleanup before display:none — wipe text content so iOS
+    // can't render a residual snapshot.
+    textEl.innerHTML = "";
+    textEl.textContent = "";
+    stage.style.display = "none";
+
+    // Share stats line is tracked silently in localStorage / D1 but not shown
+    // on the share screen — keep the UI focused on the action.
+    shareStats.textContent = "";
+
+    // Now fade the share box in cleanly.
+    shareBox.style.display = "flex";
+    void shareBox.offsetWidth;
+    shareBox.classList.add("visible");
+    await wait(50);
+
+    await waitForShareAction(shareBtn, shareSkip);
+
+    shareBox.classList.remove("visible");
+    await wait(1100);
+    shareBox.style.display = "none";
+
+    // Bring stage back, ready to type a closing "thank you" before the GDP line.
+    stage.classList.remove("fade-out");
+    stage.style.opacity = "1";
+    stage.style.display = "block";
+    textEl.innerHTML = "";
+    textEl.textContent = "";
+    cursorEl.style.display = "";
+
+    // Closing "thank you." — typed after the share action, before GDP.
+    await type("thank you.");
+    await wait(1800);
+    await del();
+    await wait(PAUSE_BETWEEN);
+
+    // Reset cursor + structure for the GDP readout
+    textEl.innerHTML = "";
+    cursorEl.style.display = "";
+
+    // If this run incremented, await its value; otherwise read the current global count.
+    let gdpCount;
+    if (bumpThisRun) {
+      gdpCount = await cycleCountPromise;
+    } else {
+      gdpCount = await abacusFetch(`/get/presence-anthropic-${todayKey()}/cycles`);
+    }
+    const gdpMinutes = (typeof gdpCount === "number" && gdpCount > 0) ? gdpCount * 10 : null;
+    const gdpHeadline = gdpMinutes != null
+      ? `+${gdpMinutes.toLocaleString()} min. of GDP*`
+      : `+ min. of GDP*`;
+
+    textEl.innerHTML =
+      '<span class="gdp-main"></span><span class="gdp-foot"></span>';
+    const gdpMain = textEl.querySelector(".gdp-main");
+    const gdpFoot = textEl.querySelector(".gdp-foot");
+
+    await type(gdpHeadline, gdpMain);
+    cursorEl.style.display = "none";
+    await wait(700);
+    gdpFoot.classList.add("shown");
+    await type("*Global Daily Presence", gdpFoot);
+
+    // Credit any sharer referenced by ?ref= for this completion (only on real completions).
+    if (bumpThisRun) {
+      const cameFromRef = LS.get("presence:cameFromRef");
+      if (cameFromRef && cameFromRef !== LS.get("presence:userId")) {
+        bumpRefCount(cameFromRef);
+      }
+    }
+  }
+
+  function runTimer(totalSeconds) {
+    return new Promise((resolve) => {
+      let t = totalSeconds;
+      const render = () => {
+        const m = Math.floor(t / 60).toString().padStart(2, "0");
+        const s = (t % 60).toString().padStart(2, "0");
+        timerEl.textContent = `${m}:${s}`;
+      };
+      render();
+      const id = setInterval(() => {
+        t--;
+        render();
+        if (t <= 0) {
+          clearInterval(id);
+          setTimeout(resolve, 900);
+        }
+      }, 1000);
+    });
+  }
+
+  startBtn.addEventListener("click", async () => {
+    startBtn.style.opacity = "0";
+    setTimeout(() => (startBtn.style.display = "none"), 600);
+    stage.style.display = "block";
+
+    // Start music immediately (player was preloaded on page load).
+    startMusic();
+    runSequence();
+  });
+</script>
+</body>
+</html>

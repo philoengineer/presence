@@ -1,0 +1,28 @@
+# AI_OS workspace — only the `presence` project (site/ + worker/) lives in
+# this repo. Everything else in the workspace is excluded.
+
+# Other unrelated projects in the workspace
+PROJECT.md
+libre_chat/
+ma-css-framework.html
+ma-design-guidelines.md
+scripts/
+streams-on-goose/
+
+# Editor / OS
+.DS_Store
+.claude/
+.idea/
+.vscode/
+
+# Wrangler local cache (contains Cloudflare account cache / state)
+.wrangler/
+worker/.wrangler/
+
+# Dev secrets (we don't have any today, but leave the pattern in place)
+.dev.vars
+.env
+.env.*
+
+# Node
+node_modules/

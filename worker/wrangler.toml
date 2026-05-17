@@ -1,0 +1,9 @@
+name = "presence-log"
+main = "src/index.js"
+compatibility_date = "2026-05-17"
+
+# Replace database_id with the one wrangler prints after `wrangler d1 create presence`.
+[[d1_databases]]
+binding = "DB"
+database_name = "presence"
+database_id = "e8c0920b-feaa-43f3-a7b5-d4fdce738826"
