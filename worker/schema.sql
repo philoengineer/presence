@@ -10,9 +10,14 @@ CREATE TABLE IF NOT EXISTS events (
   anon_id       TEXT,                     -- localStorage userId (browser-scoped UUID)
   came_from_ref TEXT,                     -- ?ref= value if this user arrived via someone's share
   ua            TEXT,                     -- user-agent (truncated to 200 chars)
-  ip_day_hash   TEXT                      -- sha256(ip + '|' + day): coarse abuse signal only
+  ip_day_hash   TEXT,                     -- sha256(ip + '|' + day): coarse abuse signal only
+  elapsed_sec   INTEGER                   -- how long the user actually sat in the hourglass
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_day  ON events(day);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_anon ON events(anon_id);
+
+-- One-time migration for the already-deployed DB (idempotent: ignore the error
+-- if the column already exists). Apply with:
+--   npx wrangler d1 execute presence --remote --command "ALTER TABLE events ADD COLUMN elapsed_sec INTEGER"

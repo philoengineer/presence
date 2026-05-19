@@ -23,11 +23,15 @@ export default {
       const ip = request.headers.get("cf-connecting-ip") || null;
       // Hash the IP so we never store raw addresses (very-low-grade abuse signal only).
       const ipHash = ip ? await sha256(ip + "|" + day) : null;
+      const elapsedSec =
+        Number.isFinite(body.elapsedSec) && body.elapsedSec >= 0
+          ? Math.min(Math.floor(body.elapsedSec), 60 * 60 * 24)
+          : null;
 
       await env.DB.prepare(
-        `INSERT INTO events (ts, day, event_type, anon_id, came_from_ref, ua, ip_day_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).bind(ts, day, eventType, anonId, cameFromRef, ua, ipHash).run();
+        `INSERT INTO events (ts, day, event_type, anon_id, came_from_ref, ua, ip_day_hash, elapsed_sec)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(ts, day, eventType, anonId, cameFromRef, ua, ipHash, elapsedSec).run();
 
       return cors(json({ ok: true }));
     }
@@ -43,21 +47,33 @@ export default {
         `SELECT COUNT(*) AS n FROM events WHERE event_type = 'completion' AND day = ?`
       ).bind(today).first())?.n ?? 0;
 
+      // Total seconds of present given today — sum across all completions.
+      // COALESCE so older rows without elapsed_sec count as 0 instead of NULL.
+      const todaySeconds = (await env.DB.prepare(
+        `SELECT COALESCE(SUM(elapsed_sec), 0) AS s FROM events
+         WHERE event_type = 'completion' AND day = ?`
+      ).bind(today).first())?.s ?? 0;
+
+      const totalSeconds = (await env.DB.prepare(
+        `SELECT COALESCE(SUM(elapsed_sec), 0) AS s FROM events
+         WHERE event_type = 'completion'`
+      ).first())?.s ?? 0;
+
       const uniqueUsers = (await env.DB.prepare(
         `SELECT COUNT(DISTINCT anon_id) AS n FROM events WHERE event_type = 'completion' AND anon_id IS NOT NULL`
       ).first())?.n ?? 0;
 
       const last7Days = (await env.DB.prepare(
-        `SELECT day, COUNT(*) AS n FROM events
+        `SELECT day, COUNT(*) AS n, COALESCE(SUM(elapsed_sec), 0) AS s FROM events
          WHERE event_type = 'completion' AND day >= date('now', '-7 days')
          GROUP BY day ORDER BY day DESC`
       ).all()).results || [];
 
       return cors(json({
         totalCompletions,
-        totalMinutes: totalCompletions * 10,
+        totalSeconds,
         todayCompletions,
-        todayMinutes: todayCompletions * 10,
+        todaySeconds,
         uniqueUsers,
         last7Days,
       }));
